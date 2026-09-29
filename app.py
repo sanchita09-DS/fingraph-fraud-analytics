@@ -11,7 +11,10 @@ load_dotenv()
 
 st.set_page_config(page_title="FinGraph Fraud Analytics", layout="wide")
 st.title("FinGraph — Real-Time Fraud Analytics")
-st.caption("Synthetic transaction data for an internship project. Not for real financial decisions.")
+st.caption(
+    "Synthetic transaction data for an internship project. "
+    "PageRank measures network influence; it is not a fraud probability."
+)
 
 URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
 USER = os.getenv("NEO4J_USER", "neo4j")
@@ -23,7 +26,11 @@ RETURN sender.account_id AS sender,
        receiver.account_id AS receiver,
        t.transaction_id AS transaction_id,
        t.amount AS amount,
-       coalesce(t.risk_score, 0.1) AS risk_score
+       coalesce(t.risk_score, 0.1) AS risk_score,
+       sender.pagerank AS sender_pagerank,
+       sender.communityId AS sender_community,
+       receiver.pagerank AS receiver_pagerank,
+       receiver.communityId AS receiver_community
 ORDER BY risk_score DESC
 LIMIT 200
 """
@@ -51,17 +58,34 @@ if not transfers:
     st.warning("No transfers found yet. Publish transactions and run the Neo4j consumer first.")
     st.stop()
 
-high_risk_count = sum(row["risk_score"] >= 0.7 for row in transfers)
-account_count = len({
-    account
-    for row in transfers
-    for account in (row["sender"], row["receiver"])
+accounts = {}
+
+for row in transfers:
+    risk = float(row.get("risk_score") or 0)
+
+    for side in ("sender", "receiver"):
+        account_id = row[side]
+        account = accounts.setdefault(
+            account_id,
+            {"pagerank": 0.0, "community": None, "high_risk": False},
+        )
+        account["pagerank"] = float(row.get(f"{side}_pagerank") or 0)
+        account["community"] = row.get(f"{side}_community")
+        account["high_risk"] = account["high_risk"] or risk >= 0.7
+
+high_risk_count = sum(float(row.get("risk_score") or 0) >= 0.7 for row in transfers)
+
+community_ids = sorted({
+    account["community"]
+    for account in accounts.values()
+    if account["community"] is not None
 })
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 col1.metric("Transfers shown", len(transfers))
-col2.metric("Accounts shown", account_count)
+col2.metric("Accounts shown", len(accounts))
 col3.metric("High-risk transfers", high_risk_count)
+col4.metric("Communities shown", len(community_ids))
 
 st.subheader("Transaction network")
 
@@ -75,26 +99,46 @@ network = Network(
 )
 network.barnes_hut()
 
-accounts = set()
-for row in transfers:
-    accounts.add(row["sender"])
-    accounts.add(row["receiver"])
+community_palette = [
+    "#38bdf8",
+    "#a78bfa",
+    "#34d399",
+    "#fbbf24",
+    "#fb7185",
+    "#2dd4bf",
+    "#c084fc",
+    "#a3e635",
+]
+community_colors = {
+    community: community_palette[index % len(community_palette)]
+    for index, community in enumerate(community_ids)
+}
 
-for account in accounts:
+for account_id, details in accounts.items():
+    community = details["community"]
+    color = "#ef4444" if details["high_risk"] else community_colors.get(
+        community, "#38bdf8"
+    )
+    size = 14 + min(details["pagerank"] * 8, 18)
+
     network.add_node(
-        account,
-        label=account,
-        color="#ef4444" if any(
-            row["risk_score"] >= 0.7
-            and account in (row["sender"], row["receiver"])
-            for row in transfers
-        ) else "#38bdf8",
-        title=f"Account: {account}",
+        account_id,
+        label=account_id,
+        color=color,
+        size=size,
+        font={"color": "white", "size": 16},
+        title=(
+            f"Account: {account_id}<br>"
+            f"PageRank: {details['pagerank']:.4f}<br>"
+            f"Louvain community: {community}<br>"
+            f"Connected to high-risk transfer: {details['high_risk']}"
+        ),
     )
 
 for row in transfers:
-    amount = row["amount"] or 0
-    risk = row["risk_score"] or 0
+    amount = float(row.get("amount") or 0)
+    risk = float(row.get("risk_score") or 0)
+
     network.add_edge(
         row["sender"],
         row["receiver"],
