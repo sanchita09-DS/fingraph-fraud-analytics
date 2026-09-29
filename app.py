@@ -6,6 +6,8 @@ import streamlit.components.v1 as components
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
 from pyvis.network import Network
+import json
+from urllib.request import Request, urlopen
 
 load_dotenv()
 
@@ -19,6 +21,28 @@ st.caption(
 URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
 USER = os.getenv("NEO4J_USER", "neo4j")
 PASSWORD = os.getenv("NEO4J_PASSWORD")
+
+SLACK_WEBHOOK_URL = os.getenv("https://hooks.slack.com/services/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")
+ALERT_THRESHOLD = float(os.getenv("ALERT_THRESHOLD", "0.7"))
+
+def send_slack_alert(row):
+    message = (
+        "*FinGraph high-risk transfer*\n"
+        f"Transaction: {row['transaction_id']}\n"
+        f"From: {row['sender']} to {row['receiver']}\n"
+        f"Amount: ${float(row.get('amount') or 0):,.2f}\n"
+        f"Risk score: {float(row.get('risk_score') or 0):.2f}"
+    )
+    body = json.dumps({"text": message}).encode("utf-8")
+    request = Request(
+        SLACK_WEBHOOK_URL,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=10) as response:
+        if response.status != 200:
+            raise RuntimeError(f"Slack returned status {response.status}")
 
 QUERY = """
 MATCH (sender:Account)-[t:TRANSFERRED_TO]->(receiver:Account)
@@ -74,6 +98,28 @@ for row in transfers:
         account["high_risk"] = account["high_risk"] or risk >= 0.7
 
 high_risk_count = sum(float(row.get("risk_score") or 0) >= 0.7 for row in transfers)
+
+if "sent_slack_alerts" not in st.session_state:
+    st.session_state["sent_slack_alerts"] = set()
+
+sent_ids = st.session_state["sent_slack_alerts"]
+alerts_sent = 0
+
+if SLACK_WEBHOOK_URL:
+    for row in transfers:
+        transaction_id = row["transaction_id"]
+        risk = float(row.get("risk_score") or 0)
+
+        if risk >= ALERT_THRESHOLD and transaction_id not in sent_ids:
+            try:
+                send_slack_alert(row)
+                sent_ids.add(transaction_id)
+                alerts_sent += 1
+            except Exception as error:
+                st.warning(f"Slack alert could not be sent: {error}")
+
+if alerts_sent:
+    st.success(f"Sent {alerts_sent} high-risk alert(s) to Slack.")
 
 community_ids = sorted({
     account["community"]
