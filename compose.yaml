@@ -33,5 +33,33 @@ services:
       CLUSTER_ID: "4L6g3nShT-eMCtK--X86sw"
       KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"
 
+  flink-jobmanager:
+    image: flink:1.20.3-scala_2.12-java17
+    container_name: fingraph-flink-jobmanager
+    command: jobmanager
+    ports:
+      - "8081:8081"
+    depends_on:
+      - kafka
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        parallelism.default: 1
+        jobmanager.memory.process.size: 768m
+    volumes:
+      - ./flink/target:/opt/flink/usrlib
+
+  flink-taskmanager:
+    image: flink:1.20.3-scala_2.12-java17
+    container_name: fingraph-flink-taskmanager
+    command: taskmanager
+    depends_on:
+      - flink-jobmanager
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 1
+        taskmanager.memory.process.size: 1024m
+
 volumes:
   neo4j_data:
