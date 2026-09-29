@@ -1,30 +1,70 @@
-# FinGraph Fraud Analytics
+# FinGraph — Real-Time Fraud Analytics
 
-A learning project that simulates financial transactions and explores suspicious money flows using graph analytics.
+FinGraph is an educational demonstration of a streaming transaction analytics pipeline. It processes synthetic transfers, assigns risk scores, stores the resulting graph in Neo4j, and displays account relationships in a Streamlit dashboard.
 
-## Project status
+> **Disclaimer:** This project uses synthetic data and heuristic risk scores. It is for learning and demonstration only—not for real financial decisions or production fraud detection.
 
-In progress. This repository will be built step by step as an internship project.
+## Features
 
-## Planned components
+- Publishes synthetic transactions to Apache Kafka.
+- Scores transactions in an Apache Flink streaming job.
+- Stores transfers and account relationships in Neo4j.
+- Uses Neo4j Graph Data Science for graph analysis, including PageRank and community detection.
+- Displays transactions, risk scores, and the account network in a Streamlit dashboard.
+- Supports optional Slack notifications through an incoming webhook.
 
-- Python transaction simulator
-- Kafka event stream
-- Apache Flink stream processing
-- Neo4j graph database and queries
-- Graph analytics
-- React investigation dashboard
+## Architecture
 
-## Data and safety
+```text
+Synthetic transactions
+        │
+        ▼
+      Kafka
+        │
+        ▼
+ Apache Flink ── risk-scored transactions
+        │
+        ▼
+      Kafka
+        │
+        ▼
+ Neo4j graph database
+        │
+        ├── Graph analysis
+        └── Streamlit dashboard
+                 │
+                 └── Optional Slack alerts
 
-This project uses synthetic data only. Do not add real customer or financial data, credentials, or `.env` files to Git.
+Technology
+- Python
+- Apache Kafka
+- Apache Flink
+- Neo4j Community Edition
+- Neo4j Graph Data Science
+- Streamlit
+- Docker Compose
+- Maven
+Requirements
+Install these tools before running the project:
+- Docker Desktop
+- Python 3
+- Java 17
+- Apache Maven
+- Git
 
-## Planned milestones
-
-1. Set up the project structure and document the architecture.
-2. Generate synthetic transactions.
-3. Store transactions in Neo4j.
-4. Stream transactions through Kafka and Flink.
-5. Add suspicious-flow queries and graph algorithms.
-6. Build an investigation dashboard.
-7. Document setup and measure performance.
+Project structure
+.
+├── app.py                    # Streamlit dashboard
+├── compose.yaml              # Neo4j, Kafka, and Flink services
+├── requirements.txt          # Python dependencies
+├── queries/
+│   └── queries/              # Cypher graph queries
+├── src/
+│   ├── kafka_to_neo4j.py     # Reads processed events into Neo4j
+│   ├── load_demo.py          # Loads sample transfers
+│   ├── publish_transactions.py
+│   ├── read_transactions.py
+│   └── simulator.py
+└── flink/
+    ├── pom.xml               # Maven build configuration
+    └── src/main/java/        # Flink transaction scoring job
